@@ -10,6 +10,7 @@ bin/
 *.dylib
 *.o
 *.obj
+!GenEffects.exe
 
 # OS & Editor temporary files
 .DS_Store

@@ -14,8 +14,8 @@ GenEffects está pensado para que cualquier compañero pueda clonar el repositor
    git clone https://github.com/Kekkan74/gen_effects.git
    cd gen_effects
    ```
-2. Haz doble clic en **`Iniciar_GenEffects.bat`** (o `run.bat`).
-   - *¿Es la primera vez que lo abres?* El launcher detecta automáticamente el entorno, descarga en ~5 segundos el runtime portable oficial de Godot 4.3 y abre la aplicación. En ejecuciones posteriores abre de inmediato en 0 segundos.
+2. Haz doble clic en **`GenEffects.exe`** (o en `Iniciar_GenEffects.bat` / `run.bat`).
+   - El ejecutable abre la aplicación directamente. Si es la primera vez tras clonar y no detecta el runtime portable en `bin\`, te preguntará si deseas descargarlo y lo configurará automáticamente en ~5 segundos para empezar a trabajar al instante.
 
 ### En Linux / macOS:
 ```bash
