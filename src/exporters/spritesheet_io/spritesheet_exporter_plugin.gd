@@ -89,6 +89,7 @@ func build_export_payload(document: Object, _options: Dictionary = {}) -> Dictio
 		"rgba_buffer": rgba_bytes,
 		"files": {
 			"%s.frames.json" % base_name: JSON.stringify(json_meta, "  "),
+			"LEEME_INSTRUCCIONES_SPRITESHEET.txt": _get_spritesheet_readme(base_name, w, h, atlas_bundle.get("columns", 4), atlas_bundle.get("rows", 2)),
 		},
 		"binary_files": {
 			"%s_sfx.wav" % base_name: wav_bytes,
@@ -102,6 +103,9 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		return ERR_INVALID_DATA
 
 	var base_dir := target_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(base_dir):
+		DirAccess.make_dir_recursive_absolute(base_dir)
+
 	var base_name: String = String(payload["base_name"])
 	var w: int = int(payload["atlas_width"])
 	var h: int = int(payload["atlas_height"])
@@ -121,4 +125,39 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		f.store_string(String(text_files[file_name]))
 		f.close()
 
+	var bin_files: Dictionary = payload.get("binary_files", {})
+	for file_name: String in bin_files.keys():
+		var bf := FileAccess.open(base_dir.path_join(file_name), FileAccess.WRITE)
+		if bf != null:
+			bf.store_buffer(bin_files[file_name] as PackedByteArray)
+			bf.close()
+
 	return OK
+
+
+static func _get_spritesheet_readme(base_name: String, w: int, h: int, cols: int, rows: int) -> String:
+	return """======================================================================
+  COMO USAR ESTE SPRITESHEET ATLAS 2D
+======================================================================
+
+Archivos incluidos en este paquete:
+1. %s_sheet.png       -> Textura con todos los fotogramas en atlas (%dx%d px).
+2. %s.frames.json     -> Metadatos de rectangulos UV, orden de frames y duracion.
+3. %s_sfx.wav         -> Efecto de sonido procedural sincronizado.
+
+EN GODOT ENGINE 4 (AnimatedSprite2D o Sprite2D):
+1. Arrastra '%s_sheet.png' al FileSystem de Godot.
+2. Si usas Sprite2D:
+   - Configura Animation -> Hframes = %d, Vframes = %d.
+3. Si usas AnimatedSprite2D:
+   - En Frames -> 'Nuevo SpriteFrames' -> 'Añadir fotogramas desde una tira de sprites'.
+   - Selecciona %d columnas y %d filas -> 'Añadir fotogramas'.
+
+EN UNREAL ENGINE 5 (Paper2D):
+1. Arrastra '%s_sheet.png' al Content Browser.
+2. Clic derecho sobre la textura -> Sprite Actions -> 'Extract Sprites' (Grid: %d cols x %d rows).
+3. Selecciona los sprites extraidos -> Clic derecho -> 'Create Flipbook'.
+
+Listo!
+======================================================================
+""" % [base_name, w, h, base_name, base_name, base_name, cols, rows, cols, rows, base_name, cols, rows]

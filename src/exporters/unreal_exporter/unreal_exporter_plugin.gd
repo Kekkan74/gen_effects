@@ -67,6 +67,7 @@ func build_export_payload(document: Object, _options: Dictionary = {}) -> Dictio
 			"%s.hlsl" % base_name: hlsl_code,
 			"%s.niagara.json" % base_name: JSON.stringify(niagara_spec, "  "),
 			"import_%s_ue5.py" % base_name: ue_python_script,
+			"LEEME_INSTRUCCIONES_UNREAL5.txt": _get_unreal_readme(base_name),
 		},
 		"binary_files": {
 			"%s_sfx.wav" % base_name: wav_bytes,
@@ -80,6 +81,9 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		return ERR_INVALID_DATA
 
 	var base_dir := target_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(base_dir):
+		DirAccess.make_dir_recursive_absolute(base_dir)
+
 	var text_files: Dictionary = payload.get("files", {})
 	for file_name: String in text_files.keys():
 		var f := FileAccess.open(base_dir.path_join(file_name), FileAccess.WRITE)
@@ -97,6 +101,37 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		fb.close()
 
 	return OK
+
+
+static func _get_unreal_readme(base_name: String) -> String:
+	return """======================================================================
+  COMO USAR ESTE EFECTO EN UNREAL ENGINE 5
+======================================================================
+
+Archivos incluidos en este paquete:
+1. %s.niagara.json       -> Especificacion de parametros del emisor Niagara.
+2. %s.hlsl               -> Expresion HLSL matematica para Material Graph / Niagara.
+3. import_%s_ue5.py      -> Script de automatizacion para el Editor de Unreal.
+4. %s_sfx.wav            -> Efecto de sonido sintetizado en PCM 16-bit.
+
+PASOS PARA IMPORTARLO EN TU PROYECTO DE UNREAL ENGINE 5:
+Opcion A (Recomendada con Python Script):
+1. Copia esta carpeta dentro de la carpeta 'Content/' de tu proyecto UE5 (ej. Content/OmniVFX/).
+2. En Unreal Engine 5, abre la ventana: 'Output Log' (Registro de salida).
+3. Cambia la linea de comandos de abajo de 'Cmd' a 'Python'.
+4. Escribe y ejecuta:
+     py "import_%s_ue5.py"
+
+Opcion B (Manual):
+1. En tu Material Graph de UE5, agrega un nodo 'Custom'.
+2. Pega el codigo de '%s.hlsl' en el campo 'Code' del nodo Custom.
+3. Conecta el Custom node al BaseColor / EmissiveColor y Opacity de tu Material.
+4. En Niagara, crea un Emitter y asigna los valores indicados en '%s.niagara.json'.
+5. Arrastra el '%s_sfx.wav' a Content Browser para que UE5 cree el SoundWave automaticamente.
+
+Listo!
+======================================================================
+""" % [base_name, base_name, base_name, base_name, base_name, base_name, base_name, base_name]
 
 
 static func _build_niagara_descriptor(

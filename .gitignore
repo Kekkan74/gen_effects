@@ -1,7 +1,6 @@
 # Godot 4+ specific ignores
 .godot/
 *.import
-export_presets.cfg
 
 # Compiled / build artifacts
 build/
@@ -20,3 +19,7 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+
+# User exports
+exports/*
+!exports/.gitkeep

@@ -72,6 +72,7 @@ func build_export_payload(document: Object, options: Dictionary = {}) -> Diction
 		"files": {
 			"%s.gdshader" % base_name: shader_code,
 			"%s.tscn" % base_name: tscn_text,
+			"LEEME_INSTRUCCIONES_GODOT.txt": _get_godot_readme(base_name),
 		},
 		"binary_files": {
 			"%s_sfx.wav" % base_name: wav_bytes,
@@ -86,6 +87,9 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		return ERR_INVALID_DATA
 
 	var base_dir := target_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(base_dir):
+		DirAccess.make_dir_recursive_absolute(base_dir)
+
 	var text_files: Dictionary = payload.get("files", {})
 	for file_name: String in text_files.keys():
 		var full_p := base_dir.path_join(file_name)
@@ -105,6 +109,30 @@ func export_to_file(document: Object, target_path: String, options: Dictionary =
 		fb.close()
 
 	return OK
+
+
+static func _get_godot_readme(base_name: String) -> String:
+	return """======================================================================
+  COMO USAR ESTE EFECTO EN GODOT ENGINE 4
+======================================================================
+
+Archivos incluidos en este paquete:
+1. %s.tscn      -> Escena lista con partículas (GPUParticles) y audio.
+2. %s.gdshader  -> Shader visual compilado en GLSL nativo de Godot 4.
+3. %s_sfx.wav   -> Efecto de sonido procedural (si estaba conectado).
+
+PASOS PARA USARLO EN TU PROYECTO DE GODOT:
+1. Copia o arrastra esta carpeta completa dentro de la carpeta 'res://' de tu proyecto de Godot.
+2. En el explorador de archivos de Godot, haz doble clic en '%s.tscn' para inspeccionarlo o probarlo.
+3. Arrastra '%s.tscn' dentro de tu nivel, jugador o escena deseada.
+4. Para activarlo por código en un ataque o impacto:
+     var vfx = preload("res://ruta/%s.tscn").instantiate()
+     add_child(vfx)
+     vfx.global_position = target_position
+
+Listo!
+======================================================================
+""" % [base_name, base_name, base_name, base_name, base_name, base_name]
 
 
 static func _generate_godot4_tscn(

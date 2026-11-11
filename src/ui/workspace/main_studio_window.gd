@@ -4,12 +4,16 @@ extends Control
 ## Ensambla la arquitectura Hexagonal: inicializa el OmniVFXKernel, registra los 4 módulos
 ## de dominio y los 4 adaptadores de exportación, y conecta los paneles visuales mediante el EventBus.
 
+const ExportDialogClass = preload("res://src/ui/export_dialog/export_dialog.gd")
+
 var kernel: OmniVFXKernel
 var graph_edit: OmniVFXGraphEdit
 var preview_viewport: LivePreviewViewport
 var inspector: ReflectionInspector
 var timeline: UnifiedTimelinePanel
 var status_label: Label
+var export_modal_backdrop: Control
+var export_dialog: PanelContainer
 
 
 func _ready() -> void:
@@ -86,19 +90,47 @@ func _build_studio_layout() -> void:
 	top_bar.add_child(spacer)
 
 	var exp_godot_btn := Button.new()
-	exp_godot_btn.text = "📦 Export Godot 4"
-	exp_godot_btn.pressed.connect(func() -> void: _run_exporter(&"exporter.godot4.scene", "user://export_godot.tscn"))
+	exp_godot_btn.text = "📦 Exportar Godot 4..."
+	exp_godot_btn.pressed.connect(func() -> void: _open_export_modal("godot4"))
 	top_bar.add_child(exp_godot_btn)
 
 	var exp_ue_btn := Button.new()
-	exp_ue_btn.text = "🚀 Export Unreal 5"
-	exp_ue_btn.pressed.connect(func() -> void: _run_exporter(&"exporter.unreal5.niagara", "user://export_unreal.json"))
+	exp_ue_btn.text = "🚀 Exportar Unreal 5..."
+	exp_ue_btn.pressed.connect(func() -> void: _open_export_modal("unreal5"))
 	top_bar.add_child(exp_ue_btn)
 
 	var exp_sheet_btn := Button.new()
-	exp_sheet_btn.text = "🖼️ Export Spritesheet"
-	exp_sheet_btn.pressed.connect(func() -> void: _run_exporter(&"exporter.spritesheet.atlas2d", "user://export_sheet.png"))
+	exp_sheet_btn.text = "🖼️ Exportar Spritesheet 2D..."
+	exp_sheet_btn.pressed.connect(func() -> void: _open_export_modal("spritesheet"))
 	top_bar.add_child(exp_sheet_btn)
+
+	# --- Diálogo Modal de Exportación Centrado ---
+	export_modal_backdrop = Control.new()
+	export_modal_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	export_modal_backdrop.visible = false
+	export_modal_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	# Fondo oscuro semitransparente que cubre toda la ventana
+	var dim_panel := Panel.new()
+	dim_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var dim_style := StyleBoxFlat.new()
+	dim_style.bg_color = Color(0, 0, 0, 0.65)
+	dim_panel.add_theme_stylebox_override("panel", dim_style)
+	export_modal_backdrop.add_child(dim_panel)
+
+	var modal_center := CenterContainer.new()
+	modal_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	export_modal_backdrop.add_child(modal_center)
+
+	export_dialog = ExportDialogClass.new(kernel)
+	export_dialog.export_completed.connect(func(exporter_id: StringName, out_dir: String) -> void:
+		status_label.text = "✅ Exportado con éxito usando [%s] en %s" % [String(exporter_id), out_dir]
+	)
+	export_dialog.visibility_changed.connect(func() -> void:
+		export_modal_backdrop.visible = export_dialog.visible
+	)
+	modal_center.add_child(export_dialog)
+	add_child(export_modal_backdrop)
 
 	# --- Cuerpo Central de 3 Columnas: Catálogo de Nodos | Viewport + GraphEdit | Inspector ---
 	var main_hsplit := HSplitContainer.new()
@@ -202,6 +234,11 @@ func _load_starter_arcane_explosion_preset() -> void:
 	kernel.command_manager.clear()
 	preview_viewport.refresh_evaluation()
 	inspector.inspect_node(kernel.active_document.graph.get_node("emitter_3d"))
+
+
+func _open_export_modal(target_engine: String) -> void:
+	if export_dialog != null:
+		export_dialog.open_dialog(target_engine)
 
 
 func _run_exporter(exporter_id: StringName, target_path: String) -> void:

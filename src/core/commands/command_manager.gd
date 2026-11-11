@@ -27,7 +27,7 @@ func execute_command(command: ICommand, allow_merge: bool = true) -> bool:
 	_redo_stack.clear()
 
 	if allow_merge and not _undo_stack.is_empty():
-		var top_cmd := _undo_stack.back()
+		var top_cmd: ICommand = _undo_stack.back()
 		if top_cmd.can_merge_with(command):
 			top_cmd.merge_with(command)
 			_notify(EventBus.TOPIC_COMMAND_EXECUTED, top_cmd, true)
