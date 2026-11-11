@@ -13,6 +13,7 @@ config_version=5
 config/name="GenEffects (OmniVFX Studio)"
 config/description="Generador open-source unificado de VFX, Shaders Procedurales, Partículas 2D/3D, Spritesheets Pixel-Art y Audio SFX para Godot y Unreal Engine."
 config/version="0.1.0-alpha"
+run/main_scene="res://scenes/main_studio.tscn"
 config/features=PackedStringArray("4.3", "Forward Plus")
 
 [display]
