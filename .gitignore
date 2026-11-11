@@ -1,0 +1,22 @@
+# Godot 4+ specific ignores
+.godot/
+*.import
+export_presets.cfg
+
+# Compiled / build artifacts
+build/
+bin/
+*.dll
+*.so
+*.dylib
+*.o
+*.obj
+
+# OS & Editor temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+.vscode/
+.idea/
