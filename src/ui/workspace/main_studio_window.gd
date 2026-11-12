@@ -2,11 +2,14 @@ class_name MainStudioWindow
 extends Control
 ## Ventana Principal de Estudio de GenEffects (OmniVFX Studio).
 ## Ensambla la arquitectura Hexagonal: inicializa el OmniVFXKernel, registra los 4 módulos
-## de dominio y los 4 adaptadores de exportación, y conecta los paneles visuales mediante el EventBus.
+## de dominio y los adaptadores de exportación/persistencia, y conecta los paneles visuales mediante EventBus.
 
 const StudioTheme = preload("res://src/ui/theme/studio_theme.gd")
 const NodeCatalogPanelClass = preload("res://src/ui/catalog/node_catalog_panel.gd")
 const ExportDialogClass = preload("res://src/ui/export_dialog/export_dialog.gd")
+const PresetBrowserDialogClass = preload("res://src/ui/presets/preset_browser_dialog.gd")
+const NodeGuideDialogClass = preload("res://src/ui/guide/node_guide_dialog.gd")
+const EffectPresetsLibrary = preload("res://src/core/presets/effect_presets_library.gd")
 
 var kernel: OmniVFXKernel
 var catalog_panel: Control
@@ -15,10 +18,16 @@ var preview_viewport: LivePreviewViewport
 var inspector: ReflectionInspector
 var timeline: UnifiedTimelinePanel
 var status_label: Label
+
+# Modales
 var export_modal_backdrop: Control
 var export_dialog: PanelContainer
+var preset_browser_dialog: PanelContainer
+var node_guide_dialog: PanelContainer
+var import_file_dialog: FileDialog
+var save_file_dialog: FileDialog
 
-# Botones de modo de vista en la barra superior
+# Botones de modo de vista
 var _btn_view_particles: Button
 var _btn_view_pixel: Button
 
@@ -30,7 +39,7 @@ func _ready() -> void:
 
 	_initialize_kernel_and_plugins()
 	_build_studio_layout()
-	_load_starter_arcane_explosion_preset()
+	_load_starter_preset()
 
 
 func _initialize_kernel_and_plugins() -> void:
@@ -63,7 +72,7 @@ func _build_studio_layout() -> void:
 	root_panel.add_child(root_vbox)
 
 	# =========================================================================
-	# 1. BARRA SUPERIOR DE HERRAMIENTAS (HEADER)
+	# 1. BARRA SUPERIOR DE HERRAMIENTAS (HEADER & ACCIONES GLOBALES)
 	# =========================================================================
 	var top_bar_panel := PanelContainer.new()
 	var top_sb := StyleBoxFlat.new()
@@ -78,7 +87,7 @@ func _build_studio_layout() -> void:
 	root_vbox.add_child(top_bar_panel)
 
 	var top_bar := HBoxContainer.new()
-	top_bar.add_theme_constant_override("separation", 10)
+	top_bar.add_theme_constant_override("separation", 8)
 	top_bar_panel.add_child(top_bar)
 
 	# Logotipo y Versión
@@ -100,9 +109,41 @@ func _build_studio_layout() -> void:
 
 	top_bar.add_child(VSeparator.new())
 
+	# Botones de Galería de Plantillas y Guía de Nodos
+	var presets_nav_btn := Button.new()
+	presets_nav_btn.text = "✨ Plantillas"
+	presets_nav_btn.tooltip_text = "Explorar y cargar efectos listos de alta calidad (Fuego, Láser, Curación...)"
+	presets_nav_btn.modulate = StudioTheme.ACCENT_GOLD
+	presets_nav_btn.pressed.connect(_open_preset_browser)
+	top_bar.add_child(presets_nav_btn)
+
+	var guide_nav_btn := Button.new()
+	guide_nav_btn.text = "❓ Guía Nodos"
+	guide_nav_btn.tooltip_text = "¿Cómo conectar nodos? Aprende la fórmula de 3 pasos"
+	guide_nav_btn.modulate = StudioTheme.COLOR_SHADER
+	guide_nav_btn.pressed.connect(_open_node_guide)
+	top_bar.add_child(guide_nav_btn)
+
+	top_bar.add_child(VSeparator.new())
+
+	# Importar / Guardar Archivo Nativo .omnivfx
+	var import_btn := Button.new()
+	import_btn.text = "📂 Importar..."
+	import_btn.tooltip_text = "Abrir un archivo de efecto guardado (.omnivfx)"
+	import_btn.pressed.connect(_open_import_dialog)
+	top_bar.add_child(import_btn)
+
+	var save_btn := Button.new()
+	save_btn.text = "💾 Guardar..."
+	save_btn.tooltip_text = "Guardar el efecto actual en disco (.omnivfx)"
+	save_btn.pressed.connect(_open_save_dialog)
+	top_bar.add_child(save_btn)
+
+	top_bar.add_child(VSeparator.new())
+
 	# Historial de Cambios (Undo / Redo)
 	var undo_btn := Button.new()
-	undo_btn.text = "↩ Deshacer"
+	undo_btn.text = "↩"
 	undo_btn.tooltip_text = "Deshacer la última acción [Ctrl+Z]"
 	undo_btn.pressed.connect(func() -> void:
 		if kernel.command_manager.undo():
@@ -113,7 +154,7 @@ func _build_studio_layout() -> void:
 	top_bar.add_child(undo_btn)
 
 	var redo_btn := Button.new()
-	redo_btn.text = "↪ Rehacer"
+	redo_btn.text = "↪"
 	redo_btn.tooltip_text = "Rehacer acción [Ctrl+Y]"
 	redo_btn.pressed.connect(func() -> void:
 		if kernel.command_manager.redo():
@@ -172,12 +213,6 @@ func _build_studio_layout() -> void:
 	exp_ue_btn.pressed.connect(func() -> void: _open_export_modal("unreal5"))
 	top_bar.add_child(exp_ue_btn)
 
-	var exp_sheet_btn := Button.new()
-	exp_sheet_btn.text = "Spritesheet 2D"
-	exp_sheet_btn.tooltip_text = "Exportar Atlas de Spritesheet (.png + .frames.json)"
-	exp_sheet_btn.pressed.connect(func() -> void: _open_export_modal("spritesheet"))
-	top_bar.add_child(exp_sheet_btn)
-
 	# =========================================================================
 	# 2. CUERPO CENTRAL DE 3 COLUMNAS CON SEPARADORES MODERNOS
 	# =========================================================================
@@ -214,8 +249,10 @@ func _build_studio_layout() -> void:
 		var spawned := kernel.spawn_node(type_id, "", Vector2(240 + randi() % 160, 120 + randi() % 140))
 		if spawned != null:
 			inspector.inspect_node(spawned)
-			status_label.text = "Nodo añadido: %s" % title
+			status_label.text = "Nodo añadido: %s. ¡Conéctalo en el lienzo!" % title
 	)
+	catalog_panel.open_presets_requested.connect(_open_preset_browser)
+	catalog_panel.open_guide_requested.connect(_open_node_guide)
 	left_card.add_child(catalog_panel)
 	main_hsplit.add_child(left_card)
 
@@ -279,14 +316,14 @@ func _build_studio_layout() -> void:
 	status_bar.custom_minimum_size = Vector2(0, 26)
 
 	status_label = Label.new()
-	status_label.text = "🟢 Estudio Activo • Arquitectura Hexagonal (4 Motores + 3 Adaptadores)"
+	status_label.text = "🟢 GenEffects Listo • Selecciona una plantilla o añade nodos desde la izquierda"
 	status_label.add_theme_font_size_override("font_size", 11)
 	status_label.modulate = StudioTheme.TEXT_SECONDARY
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_bar.add_child(status_label)
 
 	var shortcuts_lbl := Label.new()
-	shortcuts_lbl.text = "Atajos: Rueda para zoom • Clic derecho en pin para desconectar • ✖ para eliminar nodo"
+	shortcuts_lbl.text = "Atajos: Arrastra pines para conectar • Rueda para zoom • Clic derecho en pin para desconectar"
 	shortcuts_lbl.add_theme_font_size_override("font_size", 11)
 	shortcuts_lbl.modulate = StudioTheme.TEXT_MUTED
 	status_bar.add_child(shortcuts_lbl)
@@ -294,7 +331,7 @@ func _build_studio_layout() -> void:
 	root_vbox.add_child(status_bar)
 
 	# =========================================================================
-	# 4. DIÁLOGO MODAL DE EXPORTACIÓN MULTI-MOTOR (OVERLAY)
+	# 4. DIÁLOGOS MODALES Y OVERLAYS
 	# =========================================================================
 	export_modal_backdrop = Control.new()
 	export_modal_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -312,57 +349,132 @@ func _build_studio_layout() -> void:
 	modal_center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	export_modal_backdrop.add_child(modal_center)
 
+	# 4.1 Diálogo de Exportación Multi-Motor
 	export_dialog = ExportDialogClass.new(kernel)
 	export_dialog.export_completed.connect(func(exporter_id: StringName, out_dir: String) -> void:
 		status_label.text = "✅ Exportado con éxito usando [%s] en %s" % [String(exporter_id), out_dir]
 	)
-	export_dialog.visibility_changed.connect(func() -> void:
-		export_modal_backdrop.visible = export_dialog.visible
-	)
+	export_dialog.visibility_changed.connect(_sync_modal_backdrop_visibility)
 	modal_center.add_child(export_dialog)
+
+	# 4.2 Diálogo de Galería de Plantillas y Efectos
+	preset_browser_dialog = PresetBrowserDialogClass.new(kernel)
+	preset_browser_dialog.preset_selected.connect(_on_preset_chosen)
+	preset_browser_dialog.visibility_changed.connect(_sync_modal_backdrop_visibility)
+	preset_browser_dialog.visible = false
+	modal_center.add_child(preset_browser_dialog)
+
+	# 4.3 Diálogo de Guía de Nodos
+	node_guide_dialog = NodeGuideDialogClass.new()
+	node_guide_dialog.open_presets_requested.connect(_open_preset_browser)
+	node_guide_dialog.visibility_changed.connect(_sync_modal_backdrop_visibility)
+	node_guide_dialog.visible = false
+	modal_center.add_child(node_guide_dialog)
+
 	add_child(export_modal_backdrop)
 
+	# 4.4 FileDialogs para Importar y Guardar archivos .omnivfx
+	import_file_dialog = FileDialog.new()
+	import_file_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	import_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	import_file_dialog.filters = PackedStringArray(["*.omnivfx ; Proyectos OmniVFX", "*.json ; Archivos JSON"])
+	import_file_dialog.file_selected.connect(_on_import_file_selected)
+	add_child(import_file_dialog)
 
-## Crea un efecto completo de demostración al abrir el estudio conectando los 4 motores.
-func _load_starter_arcane_explosion_preset() -> void:
-	kernel.spawn_node(ProceduralShaderNodes.SDFShapeNode.TYPE_ID, "sdf_shape", Vector2(40, 40))
-	kernel.spawn_node(ProceduralShaderNodes.VoronoiNoiseNode.TYPE_ID, "voronoi_noise", Vector2(40, 210))
-	kernel.spawn_node(ProceduralShaderNodes.MathBlendNode.TYPE_ID, "mask_blend", Vector2(300, 110))
-	kernel.spawn_node(ProceduralShaderNodes.ColorRampShaderNode.TYPE_ID, "fire_ramp", Vector2(540, 110))
-	kernel.spawn_node(ParticleNodes.ParticleForceFieldNode.TYPE_ID, "vortex_force", Vector2(540, 290))
-	kernel.spawn_node(ParticleNodes.ParticleEmitterNode.TYPE_ID, "emitter_3d", Vector2(800, 140))
-	kernel.spawn_node(PixelBakerNode.TYPE_ID, "pixel_baker", Vector2(1070, 120))
-	var sfx := kernel.spawn_node(SFXSynthNode.TYPE_ID, "sfx_synth", Vector2(1070, 300)) as SFXSynthNode
-	kernel.spawn_node(ParticleNodes.EffectOutputNode.TYPE_ID, "effect_out", Vector2(1350, 180))
+	save_file_dialog = FileDialog.new()
+	save_file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	save_file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	save_file_dialog.filters = PackedStringArray(["*.omnivfx ; Proyectos OmniVFX"])
+	save_file_dialog.file_selected.connect(_on_save_file_selected)
+	add_child(save_file_dialog)
 
-	if sfx != null:
-		sfx.apply_preset(SFXPCMSynthesizer.PresetCategory.EXPLOSION, 2026)
 
-	kernel.connect_nodes("sdf_shape", 0, "mask_blend", 0)
-	kernel.connect_nodes("voronoi_noise", 0, "mask_blend", 1)
-	kernel.connect_nodes("mask_blend", 0, "fire_ramp", 0)
-	kernel.connect_nodes("fire_ramp", 0, "emitter_3d", 0)
-	kernel.connect_nodes("vortex_force", 0, "emitter_3d", 1)
-	kernel.connect_nodes("emitter_3d", 0, "pixel_baker", 0)
-	kernel.connect_nodes("pixel_baker", 0, "effect_out", 0)
-	kernel.connect_nodes("sfx_synth", 0, "effect_out", 1)
-
-	kernel.command_manager.clear()
-	preview_viewport.refresh_evaluation()
-	inspector.inspect_node(kernel.active_document.graph.get_node("emitter_3d"))
+func _sync_modal_backdrop_visibility() -> void:
+	var any_visible: bool = (export_dialog != null and export_dialog.visible) \
+		or (preset_browser_dialog != null and preset_browser_dialog.visible) \
+		or (node_guide_dialog != null and node_guide_dialog.visible)
+	export_modal_backdrop.visible = any_visible
 
 
 func _open_export_modal(target_engine: String) -> void:
+	_hide_all_modals()
 	if export_dialog != null:
 		export_dialog.open_dialog(target_engine)
 
 
-func _run_exporter(exporter_id: StringName, target_path: String) -> void:
-	var exp_plugin := kernel.registry.get_exporter(exporter_id)
-	if exp_plugin == null:
+func _open_preset_browser() -> void:
+	_hide_all_modals()
+	if preset_browser_dialog != null:
+		preset_browser_dialog.visible = true
+
+
+func _open_node_guide() -> void:
+	_hide_all_modals()
+	if node_guide_dialog != null:
+		node_guide_dialog.visible = true
+
+
+func _hide_all_modals() -> void:
+	if export_dialog != null:
+		export_dialog.visible = false
+	if preset_browser_dialog != null:
+		preset_browser_dialog.visible = false
+	if node_guide_dialog != null:
+		node_guide_dialog.visible = false
+
+
+func _on_preset_chosen(preset_id: String) -> void:
+	EffectPresetsLibrary.apply_preset(kernel, preset_id)
+	graph_edit.rebuild_from_document()
+	preview_viewport.refresh_evaluation()
+	preview_viewport.play_synthesized_sfx()
+	status_label.text = "✅ Plantilla cargada: '%s'. ¡Disfruta explorando y modificando sus nodos!" % preset_id
+
+
+func _open_import_dialog() -> void:
+	import_file_dialog.popup_centered(Vector2i(700, 500))
+
+
+func _open_save_dialog() -> void:
+	save_file_dialog.current_file = "%s.omnivfx" % kernel.active_document.effect_name
+	save_file_dialog.popup_centered(Vector2i(700, 500))
+
+
+func _on_import_file_selected(file_path: String) -> void:
+	if not FileAccess.file_exists(file_path):
 		return
-	var err := exp_plugin.export_to_file(kernel.active_document, target_path)
-	if err == OK:
-		status_label.text = "✅ Exportado con éxito usando [%s] en %s" % [exp_plugin.get_display_name(), ProjectSettings.globalize_path(target_path.get_base_dir())]
+	var f := FileAccess.open(file_path, FileAccess.READ)
+	if f == null:
+		status_label.text = "❌ Error al abrir archivo: %s" % file_path
+		return
+	var json_str := f.get_as_text()
+	f.close()
+
+	var loaded_doc := kernel.serializer.deserialize_from_json(json_str)
+	if loaded_doc != null:
+		kernel.active_document = loaded_doc
+		kernel.command_manager.clear()
+		graph_edit.rebuild_from_document()
+		preview_viewport.refresh_evaluation()
+		status_label.text = "✅ Proyecto importado con éxito: %s" % file_path.get_file()
 	else:
-		status_label.text = "❌ Error al exportar (%d)" % err
+		status_label.text = "❌ Formato .omnivfx inválido o corrupto."
+
+
+func _on_save_file_selected(file_path: String) -> void:
+	var json_str := kernel.serializer.serialize_to_json(kernel.active_document)
+	var f := FileAccess.open(file_path, FileAccess.WRITE)
+	if f == null:
+		status_label.text = "❌ Error al guardar archivo en %s" % file_path
+		return
+	f.store_string(json_str)
+	f.close()
+	status_label.text = "💾 Guardado con éxito en: %s" % file_path
+
+
+func _load_starter_preset() -> void:
+	EffectPresetsLibrary.apply_preset(kernel, EffectPresetsLibrary.PRESET_SOLAR_EXPLOSION)
+	preview_viewport.refresh_evaluation()
+	var emitter := kernel.active_document.graph.get_node("emitter_3d")
+	if emitter != null:
+		inspector.inspect_node(emitter)

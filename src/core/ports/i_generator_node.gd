@@ -113,8 +113,10 @@ func get_property_schema(prop_id: StringName) -> PropertySchema:
 func set_param(prop_id: StringName, value: Variant) -> bool:
 	var schema := get_property_schema(prop_id)
 	var sanitized: Variant = schema.sanitize_value(value) if schema != null else value
-	if _property_values.has(prop_id) and _property_values[prop_id] == sanitized:
-		return false
+	if _property_values.has(prop_id):
+		var prev: Variant = _property_values[prop_id]
+		if typeof(prev) == typeof(sanitized) and prev == sanitized:
+			return false
 	_property_values[prop_id] = sanitized
 	is_dirty = true
 	return true

@@ -27,6 +27,31 @@ chmod +x launch.sh
 
 ---
 
+## ✨ Biblioteca de Plantillas y Guía de Nodos en 3 Pasos
+
+Para que cualquier persona pueda empezar sin tener que aprender gráficos por nodos desde cero:
+
+### 1. Galería de Plantillas Listas (1 Clic)
+Pulsa el botón **`✨ Plantillas`** en la barra superior o en el catálogo para cargar cualquiera de los 6 efectos preconfigurados:
+- 🔥 **Explosión Solar Arcana:** Fuego esférico, turbulencia de Voronoi y sonido de detonación.
+- ⚡ **Rayo Láser de Plasma:** Haz sci-fi de alta velocidad, partículas direccionales y disparo láser.
+- 💚 **Aura Sagrada de Curación:** Espiral ascendente verde/oro y sonido de powerup.
+- 🌀 **Vórtice Oscuro del Vacío:** Singularidad que absorbe partículas con sonido arcano.
+- ⚔️ **Chispas de Impacto Metálico:** Ráfaga cónica ultrarrápida y golpe de metal.
+- 💨 **Columna de Humo y Cenizas:** Nubes lentas con dithering pixel-art retro.
+
+### 2. La Fórmula de 3 Pasos para Crear Nodos
+Pulsa **`❓ Guía Nodos`** para ver el diagrama visual interactivo:
+1. **Paso 1 (Forma & Color):** Conecta nodos Cyan (`SDFShape`, `Voronoi`, `Perlin`, `ColorRamp`) para definir el aspecto visual.
+2. **Paso 2 (Física & Movimiento):** Conecta la textura al `ParticleEmitter` (Púrpura) y añade fuerzas como `ParticleForceField`.
+3. **Paso 3 (Sonido & Salida):** Conecta el emisor y el nodo `SFXSynth` (Rosa) al `EffectOutput` (Dorado) para exportar a Godot o Unreal.
+
+### 3. Importar y Guardar Archivos `.omnivfx`
+- **`📂 Importar...`**: Abre cualquier archivo `.omnivfx` del disco y carga su grafo completo.
+- **`💾 Guardar...`**: Guarda tu diseño actual en formato `.omnivfx` para compartirlo con tu equipo o subirlo a Git.
+
+---
+
 ## 🎯 Flujo de Exportación Multi-Motor Sencillo
 
 GenEffects cuenta con un **Exportador Visual Integrado** (`ExportDialog`) para exportar a tus motores favoritos en 2 clics:

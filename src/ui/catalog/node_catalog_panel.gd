@@ -6,6 +6,8 @@ extends VBoxContainer
 const StudioTheme = preload("res://src/ui/theme/studio_theme.gd")
 
 signal node_spawn_requested(type_id: StringName, title: String)
+signal open_presets_requested()
+signal open_guide_requested()
 
 var _kernel: OmniVFXKernel
 var _search_edit: LineEdit
@@ -46,6 +48,28 @@ func _build_ui() -> void:
 	header_hbox.add_child(title_lbl)
 
 	add_child(header_hbox)
+
+	# Botones de Acceso Rápido a Plantillas y Guía
+	var quick_tools_hbox := HBoxContainer.new()
+	quick_tools_hbox.add_theme_constant_override("separation", 6)
+
+	var presets_btn := Button.new()
+	presets_btn.text = "✨ Plantillas"
+	presets_btn.tooltip_text = "Explorar y cargar efectos listos de alta calidad"
+	presets_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	presets_btn.modulate = StudioTheme.ACCENT_GOLD
+	presets_btn.pressed.connect(func() -> void: open_presets_requested.emit())
+	quick_tools_hbox.add_child(presets_btn)
+
+	var guide_btn := Button.new()
+	guide_btn.text = "❓ Guía Nodos"
+	guide_btn.tooltip_text = "Ver tutorial visual de cómo se conectan los nodos"
+	guide_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guide_btn.modulate = StudioTheme.COLOR_SHADER
+	guide_btn.pressed.connect(func() -> void: open_guide_requested.emit())
+	quick_tools_hbox.add_child(guide_btn)
+
+	add_child(quick_tools_hbox)
 
 	# 2. Barra de Búsqueda Interactiva
 	_search_edit = LineEdit.new()

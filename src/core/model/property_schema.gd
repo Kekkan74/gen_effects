@@ -135,5 +135,11 @@ func sanitize_value(raw_value: Variant) -> Variant:
 			return clampi(int(raw_value), 0, max_idx)
 		PropertyType.BOOL:
 			return bool(raw_value)
+		PropertyType.COLOR:
+			if raw_value is Color:
+				return raw_value
+			elif raw_value is String:
+				return Color.from_string(String(raw_value), Color.WHITE)
+			return Color.WHITE
 		_:
 			return raw_value
