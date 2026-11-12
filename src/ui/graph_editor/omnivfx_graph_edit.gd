@@ -4,6 +4,8 @@ extends GraphEdit
 ## Escucha al EventBus para reflejar visualmente los nodos y cables del DAGGraph,
 ## y traduce las interacciones del usuario en comandos transaccionales hacia el OmniVFXKernel.
 
+const StudioTheme = preload("res://src/ui/theme/studio_theme.gd")
+
 signal node_selected_for_inspection(node: IGeneratorNode)
 
 var _kernel: OmniVFXKernel
@@ -13,12 +15,15 @@ var _visual_nodes: Dictionary = {} # String (node_id) -> GraphNode
 func _init(kernel: OmniVFXKernel = null) -> void:
 	right_disconnects = true
 	minimap_enabled = true
+	snapping_enabled = true
+	snapping_distance = 16
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	connection_request.connect(_on_connection_request)
 	disconnection_request.connect(_on_disconnection_request)
 	node_selected.connect(_on_visual_node_selected)
+	delete_nodes_request.connect(_on_delete_nodes_request)
 
 	if kernel != null:
 		bind_kernel(kernel)
@@ -61,11 +66,61 @@ func _spawn_visual_graph_node(domain_node: IGeneratorNode) -> GraphNode:
 	if _visual_nodes.has(domain_node.node_id):
 		return _visual_nodes[domain_node.node_id]
 
+	var cat_color := StudioTheme.get_category_color(domain_node.get_category())
+
 	var gnode := GraphNode.new()
 	gnode.name = domain_node.node_id
 	gnode.title = domain_node.get_display_title()
 	gnode.position_offset = domain_node.position_offset
-	gnode.custom_minimum_size = Vector2(210, 0)
+	gnode.custom_minimum_size = Vector2(230, 0)
+
+	# Estilos visuales modernos para la tarjeta del nodo
+	var frame_sb := StyleBoxFlat.new()
+	frame_sb.bg_color = StudioTheme.BG_CARD
+	frame_sb.border_color = Color(cat_color.r, cat_color.g, cat_color.b, 0.5)
+	frame_sb.set_border_width_all(1)
+	frame_sb.border_width_top = 3
+	frame_sb.set_corner_radius_all(8)
+	frame_sb.content_margin_left = 12
+	frame_sb.content_margin_top = 8
+	frame_sb.content_margin_right = 12
+	frame_sb.content_margin_bottom = 10
+	gnode.add_theme_stylebox_override("panel", frame_sb)
+
+	var selected_frame := frame_sb.duplicate() as StyleBoxFlat
+	selected_frame.border_color = StudioTheme.BORDER_FOCUS
+	selected_frame.set_border_width_all(2)
+	selected_frame.border_width_top = 3
+	gnode.add_theme_stylebox_override("panel_selected", selected_frame)
+
+	var title_sb := StyleBoxFlat.new()
+	title_sb.bg_color = Color(cat_color.r * 0.25, cat_color.g * 0.25, cat_color.b * 0.25, 0.95)
+	title_sb.corner_radius_top_left = 8
+	title_sb.corner_radius_top_right = 8
+	title_sb.content_margin_left = 10
+	title_sb.content_margin_top = 6
+	title_sb.content_margin_right = 10
+	title_sb.content_margin_bottom = 6
+	gnode.add_theme_stylebox_override("titlebar", title_sb)
+
+	var selected_title := title_sb.duplicate() as StyleBoxFlat
+	selected_title.bg_color = Color(cat_color.r * 0.35, cat_color.g * 0.35, cat_color.b * 0.35, 1.0)
+	gnode.add_theme_stylebox_override("titlebar_selected", selected_title)
+
+	gnode.add_theme_color_override("title_color", Color(1.0, 1.0, 1.0, 0.95))
+
+	if gnode.has_method("get_titlebar_hbox"):
+		var titlebar: HBoxContainer = gnode.call("get_titlebar_hbox")
+		if titlebar != null:
+			var close_btn := Button.new()
+			close_btn.text = "✖"
+			close_btn.tooltip_text = "Eliminar nodo del grafo"
+			close_btn.focus_mode = Control.FOCUS_NONE
+			close_btn.pressed.connect(func() -> void:
+				if _kernel != null:
+					_kernel.remove_node(domain_node.node_id)
+			)
+			titlebar.add_child(close_btn)
 
 	# Sincronizar movimiento en el lienzo hacia el modelo de dominio
 	gnode.position_offset_changed.connect(func() -> void:
@@ -79,15 +134,22 @@ func _spawn_visual_graph_node(domain_node: IGeneratorNode) -> GraphNode:
 	if slot_rows == 0:
 		var empty_lbl := Label.new()
 		empty_lbl.text = domain_node.get_category()
+		empty_lbl.modulate = StudioTheme.TEXT_MUTED
+		empty_lbl.add_theme_font_size_override("font_size", 11)
 		gnode.add_child(empty_lbl)
 	else:
 		for i in range(slot_rows):
 			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+
 			var left_lbl := Label.new()
 			left_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			left_lbl.add_theme_font_size_override("font_size", 11)
+
 			var right_lbl := Label.new()
 			right_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			right_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			right_lbl.add_theme_font_size_override("font_size", 11)
 
 			var has_left: bool = i < in_pins.size()
 			var has_right: bool = i < out_pins.size()
@@ -97,10 +159,10 @@ func _spawn_visual_graph_node(domain_node: IGeneratorNode) -> GraphNode:
 			var right_col: Color = PinTypes.get_type_color(out_pins[i].data_type) if has_right else Color.WHITE
 
 			if has_left:
-				left_lbl.text = in_pins[i].label
+				left_lbl.text = "• " + in_pins[i].label
 				left_lbl.modulate = left_col
 			if has_right:
-				right_lbl.text = out_pins[i].label
+				right_lbl.text = out_pins[i].label + " •"
 				right_lbl.modulate = right_col
 
 			row.add_child(left_lbl)
@@ -113,6 +175,13 @@ func _spawn_visual_graph_node(domain_node: IGeneratorNode) -> GraphNode:
 	add_child(gnode)
 	_visual_nodes[domain_node.node_id] = gnode
 	return gnode
+
+
+func _on_delete_nodes_request(nodes: Array[StringName]) -> void:
+	if _kernel == null:
+		return
+	for n_name in nodes:
+		_kernel.remove_node(String(n_name))
 
 
 func _on_connection_request(from_node: StringName, from_port: int, to_node: StringName, to_port: int) -> void:

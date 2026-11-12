@@ -4,9 +4,12 @@ extends Control
 ## Ensambla la arquitectura Hexagonal: inicializa el OmniVFXKernel, registra los 4 módulos
 ## de dominio y los 4 adaptadores de exportación, y conecta los paneles visuales mediante el EventBus.
 
+const StudioTheme = preload("res://src/ui/theme/studio_theme.gd")
+const NodeCatalogPanelClass = preload("res://src/ui/catalog/node_catalog_panel.gd")
 const ExportDialogClass = preload("res://src/ui/export_dialog/export_dialog.gd")
 
 var kernel: OmniVFXKernel
+var catalog_panel: Control
 var graph_edit: OmniVFXGraphEdit
 var preview_viewport: LivePreviewViewport
 var inspector: ReflectionInspector
@@ -15,9 +18,16 @@ var status_label: Label
 var export_modal_backdrop: Control
 var export_dialog: PanelContainer
 
+# Botones de modo de vista en la barra superior
+var _btn_view_particles: Button
+var _btn_view_pixel: Button
+
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Aplicar el tema moderno y accesible a toda la jerarquía de UI
+	theme = StudioTheme.create_theme()
+
 	_initialize_kernel_and_plugins()
 	_build_studio_layout()
 	_load_starter_arcane_explosion_preset()
@@ -39,82 +49,262 @@ func _initialize_kernel_and_plugins() -> void:
 
 
 func _build_studio_layout() -> void:
+	# Contenedor raíz a pantalla completa con fondo carbón oscuro
+	var root_panel := PanelContainer.new()
+	root_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var root_sb := StyleBoxFlat.new()
+	root_sb.bg_color = StudioTheme.BG_DARKEST
+	root_panel.add_theme_stylebox_override("panel", root_sb)
+	add_child(root_panel)
+
 	var root_vbox := VBoxContainer.new()
 	root_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(root_vbox)
+	root_vbox.add_theme_constant_override("separation", 0)
+	root_panel.add_child(root_vbox)
 
-	# --- Barra Superior de Herramientas (Undo/Redo, Vistas y Exportación Multi-Motor) ---
+	# =========================================================================
+	# 1. BARRA SUPERIOR DE HERRAMIENTAS (HEADER)
+	# =========================================================================
+	var top_bar_panel := PanelContainer.new()
+	var top_sb := StyleBoxFlat.new()
+	top_sb.bg_color = StudioTheme.BG_PANEL
+	top_sb.border_color = StudioTheme.BORDER_SUBTLE
+	top_sb.border_width_bottom = 1
+	top_sb.content_margin_left = 14
+	top_sb.content_margin_top = 8
+	top_sb.content_margin_right = 14
+	top_sb.content_margin_bottom = 8
+	top_bar_panel.add_theme_stylebox_override("panel", top_sb)
+	root_vbox.add_child(top_bar_panel)
+
 	var top_bar := HBoxContainer.new()
-	top_bar.add_theme_constant_override("separation", 8)
-	root_vbox.add_child(top_bar)
+	top_bar.add_theme_constant_override("separation", 10)
+	top_bar_panel.add_child(top_bar)
+
+	# Logotipo y Versión
+	var logo_hbox := HBoxContainer.new()
+	logo_hbox.add_theme_constant_override("separation", 6)
 
 	var title_lbl := Label.new()
-	title_lbl.text = "⚡ GenEffects • OmniVFX Studio"
-	title_lbl.modulate = Color(1.0, 0.85, 0.35)
-	top_bar.add_child(title_lbl)
+	title_lbl.text = "⚡ GEN_EFFECTS"
+	title_lbl.add_theme_font_size_override("font_size", 15)
+	title_lbl.modulate = StudioTheme.ACCENT_GOLD
+	logo_hbox.add_child(title_lbl)
+
+	var version_badge := Label.new()
+	version_badge.text = "OmniVFX Studio"
+	version_badge.add_theme_font_size_override("font_size", 11)
+	version_badge.modulate = StudioTheme.TEXT_SECONDARY
+	logo_hbox.add_child(version_badge)
+	top_bar.add_child(logo_hbox)
 
 	top_bar.add_child(VSeparator.new())
 
+	# Historial de Cambios (Undo / Redo)
 	var undo_btn := Button.new()
-	undo_btn.text = "↩ Undo"
+	undo_btn.text = "↩ Deshacer"
+	undo_btn.tooltip_text = "Deshacer la última acción [Ctrl+Z]"
 	undo_btn.pressed.connect(func() -> void:
 		if kernel.command_manager.undo():
 			graph_edit.rebuild_from_document()
 			preview_viewport.refresh_evaluation()
+			status_label.text = "Acción deshecha."
 	)
 	top_bar.add_child(undo_btn)
 
 	var redo_btn := Button.new()
-	redo_btn.text = "↪ Redo"
+	redo_btn.text = "↪ Rehacer"
+	redo_btn.tooltip_text = "Rehacer acción [Ctrl+Y]"
 	redo_btn.pressed.connect(func() -> void:
 		if kernel.command_manager.redo():
 			graph_edit.rebuild_from_document()
 			preview_viewport.refresh_evaluation()
+			status_label.text = "Acción rehecha."
 	)
 	top_bar.add_child(redo_btn)
 
 	top_bar.add_child(VSeparator.new())
 
-	var view_part_btn := Button.new()
-	view_part_btn.text = "✨ Vista Partículas"
-	view_part_btn.pressed.connect(func() -> void: preview_viewport.set_view_mode("PARTICLES"))
-	top_bar.add_child(view_part_btn)
+	# Selector de Vistas Segmentado
+	_btn_view_particles = Button.new()
+	_btn_view_particles.text = "✨ Partículas 3D"
+	_btn_view_particles.tooltip_text = "Visualizar física de partículas 3D en tiempo real"
+	_btn_view_particles.modulate = StudioTheme.ACCENT_GOLD
+	_btn_view_particles.pressed.connect(func() -> void:
+		preview_viewport.set_view_mode("PARTICLES")
+		_btn_view_particles.modulate = StudioTheme.ACCENT_GOLD
+		_btn_view_pixel.modulate = Color.WHITE
+	)
+	top_bar.add_child(_btn_view_particles)
 
-	var view_pix_btn := Button.new()
-	view_pix_btn.text = "👾 Vista Pixel Atlas"
-	view_pix_btn.pressed.connect(func() -> void: preview_viewport.set_view_mode("PIXEL_ATLAS"))
-	top_bar.add_child(view_pix_btn)
+	_btn_view_pixel = Button.new()
+	_btn_view_pixel.text = "👾 Pixel Atlas 2D"
+	_btn_view_pixel.tooltip_text = "Visualizar textura horneada de spritesheet retro"
+	_btn_view_pixel.pressed.connect(func() -> void:
+		preview_viewport.set_view_mode("PIXEL_ATLAS")
+		_btn_view_pixel.modulate = StudioTheme.COLOR_PIXEL
+		_btn_view_particles.modulate = Color.WHITE
+	)
+	top_bar.add_child(_btn_view_pixel)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top_bar.add_child(spacer)
 
+	# Botón Primario de Exportación
+	var export_all_btn := Button.new()
+	export_all_btn.text = "📦 Exportar Proyecto..."
+	export_all_btn.tooltip_text = "Abrir el diálogo de exportación multi-motor"
+	export_all_btn.custom_minimum_size = Vector2(170, 32)
+	export_all_btn.modulate = StudioTheme.ACCENT_GOLD
+	export_all_btn.pressed.connect(func() -> void: _open_export_modal("godot4"))
+	top_bar.add_child(export_all_btn)
+
 	var exp_godot_btn := Button.new()
-	exp_godot_btn.text = "📦 Exportar Godot 4..."
+	exp_godot_btn.text = "Godot 4"
+	exp_godot_btn.tooltip_text = "Exportación directa a Godot 4 (.tscn + .gdshader + .wav)"
 	exp_godot_btn.pressed.connect(func() -> void: _open_export_modal("godot4"))
 	top_bar.add_child(exp_godot_btn)
 
 	var exp_ue_btn := Button.new()
-	exp_ue_btn.text = "🚀 Exportar Unreal 5..."
+	exp_ue_btn.text = "Unreal 5"
+	exp_ue_btn.tooltip_text = "Exportación directa a Unreal Engine 5 (Niagara + HLSL + Python)"
 	exp_ue_btn.pressed.connect(func() -> void: _open_export_modal("unreal5"))
 	top_bar.add_child(exp_ue_btn)
 
 	var exp_sheet_btn := Button.new()
-	exp_sheet_btn.text = "🖼️ Exportar Spritesheet 2D..."
+	exp_sheet_btn.text = "Spritesheet 2D"
+	exp_sheet_btn.tooltip_text = "Exportar Atlas de Spritesheet (.png + .frames.json)"
 	exp_sheet_btn.pressed.connect(func() -> void: _open_export_modal("spritesheet"))
 	top_bar.add_child(exp_sheet_btn)
 
-	# --- Diálogo Modal de Exportación Centrado ---
+	# =========================================================================
+	# 2. CUERPO CENTRAL DE 3 COLUMNAS CON SEPARADORES MODERNOS
+	# =========================================================================
+	var main_margin := MarginContainer.new()
+	main_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main_margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_margin.add_theme_constant_override("margin_left", 8)
+	main_margin.add_theme_constant_override("margin_top", 8)
+	main_margin.add_theme_constant_override("margin_right", 8)
+	main_margin.add_theme_constant_override("margin_bottom", 6)
+	root_vbox.add_child(main_margin)
+
+	var main_hsplit := HSplitContainer.new()
+	main_hsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main_hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_margin.add_child(main_hsplit)
+
+	# --- Columna Izquierda: Biblioteca de Nodos Moderna con Buscador y Categorías ---
+	var left_card := PanelContainer.new()
+	left_card.custom_minimum_size = Vector2(290, 0)
+	var left_card_sb := StyleBoxFlat.new()
+	left_card_sb.bg_color = StudioTheme.BG_PANEL
+	left_card_sb.border_color = StudioTheme.BORDER_SUBTLE
+	left_card_sb.set_border_width_all(1)
+	left_card_sb.set_corner_radius_all(8)
+	left_card_sb.content_margin_left = 12
+	left_card_sb.content_margin_top = 10
+	left_card_sb.content_margin_right = 12
+	left_card_sb.content_margin_bottom = 10
+	left_card.add_theme_stylebox_override("panel", left_card_sb)
+
+	catalog_panel = NodeCatalogPanelClass.new(kernel)
+	catalog_panel.node_spawn_requested.connect(func(type_id: StringName, title: String) -> void:
+		var spawned := kernel.spawn_node(type_id, "", Vector2(240 + randi() % 160, 120 + randi() % 140))
+		if spawned != null:
+			inspector.inspect_node(spawned)
+			status_label.text = "Nodo añadido: %s" % title
+	)
+	left_card.add_child(catalog_panel)
+	main_hsplit.add_child(left_card)
+
+	# --- Columna Central + Derecha ---
+	var right_hsplit := HSplitContainer.new()
+	right_hsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_hsplit.add_child(right_hsplit)
+
+	# División Vertical Central: Visor en Tiempo Real (Arriba) | Grafo de Nodos (Abajo)
+	var center_vsplit := VSplitContainer.new()
+	center_vsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	center_vsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right_hsplit.add_child(center_vsplit)
+
+	var viewport_card := PanelContainer.new()
+	viewport_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var v_sb := StyleBoxFlat.new()
+	v_sb.bg_color = StudioTheme.BG_DARKEST
+	v_sb.border_color = StudioTheme.BORDER_SUBTLE
+	v_sb.set_border_width_all(1)
+	v_sb.set_corner_radius_all(8)
+	viewport_card.add_theme_stylebox_override("panel", v_sb)
+
+	preview_viewport = LivePreviewViewport.new(kernel)
+	viewport_card.add_child(preview_viewport)
+	center_vsplit.add_child(viewport_card)
+
+	var graph_card := PanelContainer.new()
+	graph_card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	graph_card.add_theme_stylebox_override("panel", v_sb)
+
+	graph_edit = OmniVFXGraphEdit.new(kernel)
+	graph_card.add_child(graph_edit)
+	center_vsplit.add_child(graph_card)
+
+	# --- Columna Derecha: Inspector por Reflexión ---
+	var inspector_card := PanelContainer.new()
+	inspector_card.custom_minimum_size = Vector2(330, 0)
+	inspector_card.add_theme_stylebox_override("panel", left_card_sb)
+
+	inspector = ReflectionInspector.new(kernel)
+	inspector_card.add_child(inspector)
+	right_hsplit.add_child(inspector_card)
+
+	graph_edit.node_selected_for_inspection.connect(func(node: IGeneratorNode) -> void:
+		inspector.inspect_node(node)
+	)
+
+	# =========================================================================
+	# 3. BARRA INFERIOR: LÍNEA DE TIEMPO + BARRA DE ESTADO
+	# =========================================================================
+	timeline = UnifiedTimelinePanel.new()
+	timeline.time_scrubbed.connect(func(t: float) -> void: preview_viewport.set_preview_time(t))
+	timeline.sfx_trigger_requested.connect(func() -> void: preview_viewport.play_synthesized_sfx())
+	root_vbox.add_child(timeline)
+
+	# Barra de estado inferior
+	var status_bar := HBoxContainer.new()
+	status_bar.add_theme_constant_override("separation", 12)
+	status_bar.custom_minimum_size = Vector2(0, 26)
+
+	status_label = Label.new()
+	status_label.text = "🟢 Estudio Activo • Arquitectura Hexagonal (4 Motores + 3 Adaptadores)"
+	status_label.add_theme_font_size_override("font_size", 11)
+	status_label.modulate = StudioTheme.TEXT_SECONDARY
+	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	status_bar.add_child(status_label)
+
+	var shortcuts_lbl := Label.new()
+	shortcuts_lbl.text = "Atajos: Rueda para zoom • Clic derecho en pin para desconectar • ✖ para eliminar nodo"
+	shortcuts_lbl.add_theme_font_size_override("font_size", 11)
+	shortcuts_lbl.modulate = StudioTheme.TEXT_MUTED
+	status_bar.add_child(shortcuts_lbl)
+
+	root_vbox.add_child(status_bar)
+
+	# =========================================================================
+	# 4. DIÁLOGO MODAL DE EXPORTACIÓN MULTI-MOTOR (OVERLAY)
+	# =========================================================================
 	export_modal_backdrop = Control.new()
 	export_modal_backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	export_modal_backdrop.visible = false
 	export_modal_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 
-	# Fondo oscuro semitransparente que cubre toda la ventana
 	var dim_panel := Panel.new()
 	dim_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var dim_style := StyleBoxFlat.new()
-	dim_style.bg_color = Color(0, 0, 0, 0.65)
+	dim_style.bg_color = Color(0, 0, 0, 0.72)
 	dim_panel.add_theme_stylebox_override("panel", dim_style)
 	export_modal_backdrop.add_child(dim_panel)
 
@@ -131,80 +321,6 @@ func _build_studio_layout() -> void:
 	)
 	modal_center.add_child(export_dialog)
 	add_child(export_modal_backdrop)
-
-	# --- Cuerpo Central de 3 Columnas: Catálogo de Nodos | Viewport + GraphEdit | Inspector ---
-	var main_hsplit := HSplitContainer.new()
-	main_hsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	root_vbox.add_child(main_hsplit)
-
-	# Columna Izquierda: Catálogo de Nodos registrados en el ServiceRegistry
-	var left_panel := VBoxContainer.new()
-	left_panel.custom_minimum_size = Vector2(230, 0)
-	var cat_header := Label.new()
-	cat_header.text = "➕ AÑADIR NODO AL GRAFO"
-	cat_header.modulate = Color(0.55, 0.85, 1.0)
-	left_panel.add_child(cat_header)
-
-	var cat_scroll := ScrollContainer.new()
-	cat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var cat_list := VBoxContainer.new()
-	cat_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cat_scroll.add_child(cat_list)
-	left_panel.add_child(cat_scroll)
-
-	for item in kernel.registry.get_registered_node_catalog():
-		var add_btn := Button.new()
-		add_btn.text = "+ %s" % String(item["title"])
-		add_btn.tooltip_text = String(item["description"])
-		add_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		var t_id: StringName = item["type_id"]
-		add_btn.pressed.connect(func() -> void:
-			var spawned := kernel.spawn_node(t_id, "", Vector2(220 + randi() % 180, 100 + randi() % 140))
-			if spawned != null:
-				inspector.inspect_node(spawned)
-		)
-		cat_list.add_child(add_btn)
-
-	main_hsplit.add_child(left_panel)
-
-	# Columna Central + Derecha
-	var right_hsplit := HSplitContainer.new()
-	right_hsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right_hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main_hsplit.add_child(right_hsplit)
-
-	# División Vertical Central: Arriba Viewport en Tiempo Real | Abajo GraphEdit Unificado
-	var center_vsplit := VSplitContainer.new()
-	center_vsplit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center_vsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right_hsplit.add_child(center_vsplit)
-
-	preview_viewport = LivePreviewViewport.new(kernel)
-	center_vsplit.add_child(preview_viewport)
-
-	graph_edit = OmniVFXGraphEdit.new(kernel)
-	center_vsplit.add_child(graph_edit)
-
-	# Columna Derecha: Inspector por Reflexión
-	inspector = ReflectionInspector.new(kernel)
-	inspector.custom_minimum_size = Vector2(310, 0)
-	right_hsplit.add_child(inspector)
-
-	graph_edit.node_selected_for_inspection.connect(func(node: IGeneratorNode) -> void:
-		inspector.inspect_node(node)
-	)
-
-	# --- Barra Inferior: Timeline Unificada + Estado ---
-	timeline = UnifiedTimelinePanel.new()
-	timeline.time_scrubbed.connect(func(t: float) -> void: preview_viewport.set_preview_time(t))
-	timeline.sfx_trigger_requested.connect(func() -> void: preview_viewport.play_synthesized_sfx())
-	root_vbox.add_child(timeline)
-
-	status_label = Label.new()
-	status_label.text = "Listo • Arquitectura Hexagonal Activa (4 Motores + 4 Exporters)"
-	status_label.modulate = Color(0.65, 0.75, 0.85)
-	root_vbox.add_child(status_label)
 
 
 ## Crea un efecto completo de demostración al abrir el estudio conectando los 4 motores.
